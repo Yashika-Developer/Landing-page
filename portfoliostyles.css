@@ -222,6 +222,10 @@
   .hero__container--right {
     text-align: center;
   }
+hero__container--right img{
+    height: 50%;
+    width: 50%;
+}
   
   .hero__container--img {
     height: 100%;
