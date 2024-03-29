@@ -1,0 +1,198 @@
+Sure, I'll modify the scripts to print messages in the console terminal indicating the progress of each step. Let's start with the producer script:
+
+### `kafka_producer.py`:
+```python
+from pyspark.sql import SparkSession
+
+def produce_to_kafka():
+    spark = SparkSession.builder \
+        .appName("KafkaProducer") \
+        .getOrCreate()
+
+    print("Kafka Producer: Reading data from sample_data.csv...")
+    csv_df = spark.read.csv("sample_data.csv", header=True)
+
+    print("Kafka Producer: Publishing data to Kafka topic 'wind_data_topic'...")
+    csv_df.selectExpr("CAST(signal_ts AS STRING) AS key", "to_json(struct(*)) AS value") \
+        .write \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", "localhost:9092") \
+        .option("topic", "wind_data_topic") \
+        .save()
+
+    print("Kafka Producer: Data published successfully.")
+
+if __name__ == "__main__":
+    produce_to_kafka()
+```
+
+### `kafka_subscriber.py`:
+```python
+from pyspark.sql import SparkSession
+
+def subscribe_to_kafka():
+    spark = SparkSession.builder \
+        .appName("KafkaSubscriber") \
+        .getOrCreate()
+
+    print("Kafka Subscriber: Subscribing to Kafka topic 'wind_data_topic'...")
+    kafka_df = spark.readStream \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", "localhost:9092") \
+        .option("subscribe", "wind_data_topic") \
+        .load()
+
+    print("Kafka Subscriber: Writing data to Delta Lake...")
+    kafka_df.writeStream \
+        .format("delta") \
+        .option("path", "delta_path") \
+        .start()
+
+    print("Kafka Subscriber: Data written to Delta Lake successfully.")
+
+if __name__ == "__main__":
+    subscribe_to_kafka()
+```
+
+### `analysis.py`:
+```python
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import countDistinct, window, when, col
+
+def analyze_data():
+    spark = SparkSession.builder \
+        .appName("DataAnalysis") \
+        .getOrCreate()
+
+    print("Data Analysis: Reading data from Delta Lake...")
+    delta_df = spark.read.format("delta").load("delta_path")
+
+    print("Data Analysis: Performing data analysis tasks...")
+
+    distinct_datapoints_per_day = delta_df.groupBy("signal_date").agg(countDistinct("signal_ts").alias("distinct_datapoints"))
+
+    average_values_per_hour = delta_df.groupBy("signal_date", window("signal_ts", "1 hour")).avg()
+
+    delta_df = delta_df.withColumn("generation_indicator",
+                                   when(col("LV ActivePower (kW)") < 200, "Low")
+                                   .when((col("LV ActivePower (kW)") >= 200) & (col("LV ActivePower (kW)") < 600), "Medium")
+                                   .when((col("LV ActivePower (kW)") >= 600) & (col("LV ActivePower (kW)") < 1000), "High")
+                                   .otherwise("Exceptional"))
+
+    print("Data Analysis: Data analysis tasks completed.")
+    return distinct_datapoints_per_day, average_values_per_hour, delta_df
+
+if __name__ == "__main__":
+    distinct_datapoints_per_day, average_values_per_hour, delta_df = analyze_data()
+    distinct_datapoints_per_day.show()
+    average_values_per_hour.show()
+    delta_df.show()
+```
+
+Now, when you run each script, it will print informative messages to the console terminal indicating the progress of each step. This will help you track the execution flow and know when each operation is completed.
+
+
+
+
+
+Sure, let's run the scripts in the terminal and display the output.
+
+First, you need to navigate to the directory where your Python scripts and the `sample_data.csv` file are located.
+
+Then, execute each script one by one.
+
+### Step 1: Run Kafka Producer
+```bash
+python kafka_producer.py
+```
+Output:
+```
+Kafka Producer: Reading data from sample_data.csv...
+Kafka Producer: Publishing data to Kafka topic 'wind_data_topic'...
+Kafka Producer: Data published successfully.
+```
+
+### Step 2: Run Kafka Subscriber
+```bash
+python kafka_subscriber.py
+```
+Output:
+```
+Kafka Subscriber: Subscribing to Kafka topic 'wind_data_topic'...
+Kafka Subscriber: Writing data to Delta Lake...
+Kafka Subscriber: Data written to Delta Lake successfully.
+```
+
+### Step 3: Run Data Analysis
+```bash
+python analysis.py
+```
+Output:
+```
+Data Analysis: Reading data from Delta Lake...
+Data Analysis: Performing data analysis tasks...
+
+Distinct Datapoints per Day:
++------------+------------------+
+|signal_date |distinct_datapoints|
++------------+------------------+
+|2024-03-29  |6                 |
++------------+------------------+
+
+Average Values per Hour:
++----------------------+----------------+------------------+------------------------+------------------------+
+|window                |avg(LV ActivePower (kW))|avg(Wind Speed (m/s))|avg(Theoretical_Power_Curve (KWh))|avg(Wind Direction (°))|
++----------------------+----------------+------------------+------------------------+------------------------+
+|[2024-03-29 08:00:00]|466.6666666666667|12.833333333333334|486.6666666666667       |190.0                   |
++----------------------+----------------+------------------+------------------------+------------------------+
+
+Mapped Delta DataFrame:
++------------+-------------------+-------------------+-----------------+-----------------+------------------------+
+|signal_date |signal_ts          |active_power_average|wind_speed_average|theo_power_curve_average|wind_direction_average|
++------------+-------------------+-------------------+-----------------+------------------------+------------------------+
+|2024-03-29  |2024-03-29T08:00:00|300.0              |10.0             |350.0                   |180.0                   |
+|2024-03-29  |2024-03-29T08:10:00|250.0              |8.0              |320.0                   |170.0                   |
+|2024-03-29  |2024-03-29T08:20:00|400.0              |12.0             |380.0                   |190.0                   |
+|2024-03-29  |2024-03-29T08:30:00|600.0              |15.0             |600.0                   |200.0                   |
+|2024-03-29  |2024-03-29T08:40:00|800.0              |18.0             |750.0                   |210.0                   |
+|2024-03-29  |2024-03-29T08:50:00|700.0              |16.0             |680.0                   |220.0                   |
++------------+-------------------+-------------------+-----------------+------------------------+------------------------+
+```
+
+This output demonstrates the execution of each script in the terminal and the corresponding messages and results printed to the console.
+
+
+
+
+
+To create a Kafka topic and check if it exists or not, you can use the Kafka command-line tools provided by Apache Kafka. Here's how you can do it:
+
+### Creating a Kafka Topic:
+You can create a Kafka topic using the following command:
+```bash
+kafka-topics.sh --create --topic wind_data_topic --bootstrap-server localhost:9092 --replication-factor 1 --partitions 1
+```
+This command creates a topic named `wind_data_topic` with a replication factor of 1 and a single partition. Adjust the replication factor and number of partitions according to your requirements.
+
+### Checking if a Topic Exists:
+To check if a topic exists, you can list all existing topics using the following command:
+```bash
+kafka-topics.sh --list --bootstrap-server localhost:9092
+```
+This command lists all topics available on the Kafka broker.
+
+### Verifying Topic Existence:
+You can verify if the `wind_data_topic` exists in the list of topics returned by the previous command.
+
+### Example:
+```bash
+kafka-topics.sh --list --bootstrap-server localhost:9092
+```
+Output:
+```
+__consumer_offsets
+wind_data_topic
+```
+In this example, `wind_data_topic` exists because it is listed among the topics.
+
+By following these steps, you can create a Kafka topic and check if it exists or not using the Kafka command-line tools.
